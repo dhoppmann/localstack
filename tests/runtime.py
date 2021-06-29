@@ -25,24 +25,27 @@ _runtime_thread = None
 _cmd_lock = mp.Lock()
 
 
-def start(wait=True, timeout=None):
+def start(timeout=None):
+    """
+    Start a new LocalStack instance and potentially wait until it is started. This function is idempotent, and thread
+    safe.
+    """
     global _runtime_thread
 
     with _cmd_lock:
         if _startup_monitor_event.is_set():
-            _started.wait(timeout=timeout)
-            return
+            return _started.wait(timeout=timeout)
 
         _runtime_thread = threading.Thread(target=_run_startup_monitor).start()
 
         _startup_monitor_event.set()
-        if wait:
-            _started.wait(timeout=timeout)
+        return _started.wait(timeout=timeout)
 
 
 def stop():
-    _stop.set()
-    _startup_monitor_event.set()
+    with _cmd_lock:
+        _stop.set()
+        _startup_monitor_event.set()
 
 
 def join(timeout=None):
@@ -59,6 +62,9 @@ def join(timeout=None):
 
 
 def reset():
+    """
+    Stops the running LocalStack instance
+    """
     global _runtime_thread
 
     stop()
@@ -68,6 +74,11 @@ def reset():
     _stop.clear()
     _stopped.clear()
     _startup_monitor_event.clear()
+    infra.INFRA_READY.clear()
+
+
+def is_running():
+    return infra.INFRA_READY.is_set()
 
 
 def _run_startup_monitor() -> None:
